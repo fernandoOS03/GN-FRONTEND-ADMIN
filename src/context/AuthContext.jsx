@@ -1,62 +1,118 @@
-import { createContext, useState } from "react";
+import React, { createContext, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom"; // Hook para navegación suave
+import axios from "axios"; // Solo para el objeto global (aunque se usa axiosInstance)
+import axiosInstance from "../api/axiosInstance.js"; // Instancia configurada con Interceptor
 
-import axiosInstance from "../api/axiosInstance.js";
+// 1. CREACIÓN DEL CONTEXTO
+export const AuthContext = createContext({
+    // Valores por defecto que definen el "contrato" de la data
+    token: null,
+    user: null, // Objeto con detalles del usuario (nombre, id)
+    rol: null,
+    loading: false,
+    error: null,
+    login: async () => { },
+    logout: () => { },
+});
 
-//Primero creamos el contexto
-export const AuthContext = createContext();
-
+// 2. COMPONENTE PROVEEDOR (PROVIDER)
 export const AuthProvider = ({ children }) => {
-    //Estado inicial, intenta cargar desde localStorage
-    const [isLogginIn, setIsLogginIn] = useState(!!localStorage.getItem('token'));
+    // Hook para la navegación suave (redirigir después de login/logout)
+    const navigate = useNavigate(); 
+    
+    // --- A. ESTADO DE AUTENTICACIÓN (Persistencia y Datos del Usuario) ---
+    // Carga inicial: Si hay token o rol en localStorage, los carga al inicio
+    const [token, setToken] = useState(localStorage.getItem('token'));
     const [rol, setRol] = useState(localStorage.getItem('rol') || null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
+    
+    // Estado para el objeto de usuario (nombre, id, etc.)
+    const [user, setUser] = useState(() => {
+        const userData = localStorage.getItem('user');
+        // Si hay datos, los parsea, si no, es null
+        return userData ? JSON.parse(userData) : null; 
+    }); 
 
-    //Funcion del login (Esta es llamada desde LoginPage.jsx)
+    // --- B. ESTADO DE PROCESO (Feedback a la UI) ---
+    const [loading, setLoading] = useState(false); // Indica si está esperando respuesta de la API
+    const [error, setError] = useState(null); // Almacena mensajes de error del login
+
+
+    // --- C. FUNCIONES DE AUTENTICACIÓN ---
+
+    /**
+     * Función que maneja el inicio de sesión.
+     */
     const login = async (email, contrasenia) => {
         setLoading(true);
         setError(null);
         try {
-            //llamamos al endoint del backend
-            const response = await axiosInstance.post('auth/login', {
-                email, contrasenia
-            });
+            // RUTA RELATIVA: AxiosInstance ya maneja la base URL (ej: http://localhost:3000/api)
+            const url = `/auth/login`; 
 
-            const {token, rol} = response.data;
+            // Usa axiosInstance para la petición. Asume que el backend devuelve { token, rol, user }
+            const response = await axiosInstance.post(url, { email, contrasenia });
+            
+            // Desestructuración de la respuesta del backend
+            const { token: newToken, rol: userRol, user: userData } = response.data; 
 
-            localStorage.setItem('token', token);
-            localStorage.setItem('rol', rol);
+            // 1. Guardar en local Storage para persistencia
+            localStorage.setItem('token', newToken);
+            localStorage.setItem('rol', userRol);
+            localStorage.setItem('user', JSON.stringify(userData));
+            
+            // 2. Actualizar estados de React
+            setToken(newToken);
+            setRol(userRol);
+            setUser(userData); 
 
-            //Actualizamos el estado general de react
-            setIsLogginIn(true);
-            setRol(rol);
             setLoading(false);
-            return true; //Esto retorna exito en el login
+            return true; // Éxito
 
         } catch (err) {
-            const errorMessage = err.response?.data?.message || 'Error de conexion o credenciales';
-            setError(errorMessage);
+            console.error("Error en el login:", err.response?.data?.message || err.message);
+            
+            // 3. Limpiar estado en caso de fallo
+            localStorage.removeItem('token');
+            localStorage.removeItem('rol');
+            localStorage.removeItem('user');
+            setToken(null);
+            setRol(null);
+            setUser(null);
+            
+            // Mostrar error al usuario
+            setError(err.response?.data?.message || 'Error de conexión o credenciales inválidas.');
             setLoading(false);
             return false;
         }
     };
 
+
+    /**
+     * Función que maneja el cierre de sesion.
+     */
     const logout = () => {
+        // Limpiar estados y localStorage
+        setToken(null);
+        setRol(null);
+        setUser(null);
         localStorage.removeItem('token');
         localStorage.removeItem('rol');
-        setIsLogginIn(false);
-        setRol(null);
+        localStorage.removeItem('user');
+        
+        // Usar useNavigate para una navegación suave (SPA)
+        navigate('/login', { replace: true }); 
     };
 
-    //Valor del contexto que se alimentara la app
-
+    // --- D. OBJETO DE CONTEXTO ---
+    // Objeto que se proveerá a los componentes hijos
     const contextValue = {
-        isLogginIn,
+        token,
         rol,
+        user, 
         loading,
         error,
-        login,
-        logout
+        login, // Función de login expuesta
+        logout // Función de logout expuesta
     };
 
     return (

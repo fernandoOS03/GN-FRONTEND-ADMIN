@@ -1,5 +1,5 @@
 /**
- * Este archivo se encargarade las llamadas HTTP a mi back (/api/usuarios) usando axiosInstance
+ * Este archivo se encargara de las llamadas HTTP a mi back (/api/usuarios) usando axiosInstance
  */
 
 import axiosInstance from "./axiosInstance.js";
